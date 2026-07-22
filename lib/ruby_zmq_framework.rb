@@ -5,4 +5,5 @@ require_relative "ruby_zmq_framework/state_registry"
 require_relative "ruby_zmq_framework/can_bridge"
 
 module RubyZmqFramework
+  class Error < StandardError; end
 end
