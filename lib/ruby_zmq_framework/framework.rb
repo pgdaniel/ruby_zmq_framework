@@ -10,17 +10,24 @@ module RubyZmqFramework
       end
 
       def required_methods
-        @required_methods || []
+        inherited = superclass.respond_to?(:required_methods) ? superclass.required_methods : []
+        inherited | (@required_methods || [])
       end
 
+      # The check runs BEFORE super (i.e. before allocate/initialize), so a
+      # violating class never gets partially constructed. This matters for
+      # FrameworkModule: its prepended Heartbeat starts a broadcasting thread
+      # inside initialize, and checking afterwards would leak that thread
+      # from a zombie instance whose .new appeared to fail.
       def new(...)
-        instance = super
-        missing = required_methods - instance.methods
+        missing = required_methods.reject do |m|
+          method_defined?(m) || private_method_defined?(m)
+        end
         if missing.any?
           raise NotImplementedError,
                 "[Framework Error] Contract Violation: #{self} missing #{missing.join(', ')}"
         end
-        instance
+        super
       end
     end
   end

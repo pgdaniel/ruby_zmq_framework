@@ -17,10 +17,34 @@ class CompliantNode
   def handle_message(topic, payload); end
 end
 
+# Includes the full FrameworkModule but "forgets" handle_message, to prove
+# a contract violation is caught before initialize can start the heartbeat.
+class ForgetfulNode
+  include RubyZmqFramework::FrameworkModule
+
+  def initialize(bus)
+    @bus = bus
+  end
+end
+
 class StrictContractTest < Minitest::Test
   def test_raises_when_a_required_method_is_missing
     error = assert_raises(NotImplementedError) { ContractlessNode.new }
     assert_match(/handle_message/, error.message)
+  end
+
+  def test_the_contract_applies_to_subclasses_too
+    subclass = Class.new(ContractlessNode)
+    error = assert_raises(NotImplementedError) { subclass.new }
+    assert_match(/handle_message/, error.message)
+  end
+
+  def test_a_violating_framework_module_never_starts_its_heartbeat
+    bus = FakeBus.new
+    assert_raises(NotImplementedError) { ForgetfulNode.new(bus) }
+
+    sleep 0.05 # a leaked heartbeat thread would broadcast immediately
+    assert_empty bus.messages, "no heartbeat may leak from a failed .new"
   end
 
   def test_succeeds_when_the_required_method_is_present
