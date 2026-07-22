@@ -22,4 +22,7 @@ Gem::Specification.new do |spec|
 
   spec.add_dependency "ffi-rzmq", "~> 2.0"
   spec.add_dependency "json", "~> 2.0"
+
+  spec.add_development_dependency "minitest", "~> 5.20"
+  spec.add_development_dependency "rake", "~> 13.0"
 end
