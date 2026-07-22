@@ -1,12 +1,12 @@
 require_relative '../lib/ruby_zmq_framework'
 
 # Binds to 5558, connects to the ECU, Telemetry, Web Bridge, Dashboard
-# Consumer, and CAN Bridge publishers.
+# Consumer, CAN Bridge, and Python DBC Decoder publishers.
 # NOTE: ZeroMQBus has no dynamic peer discovery, so any node that will
 # publish something the registry needs to see (a heartbeat, telemetry, or
 # a :request_global_state) must have its port listed here too, or its
 # messages never reach us.
-bus = RubyZmqFramework::ZeroMQBus.new(5558, [5555, 5556, 5557, 5559, 5560])
+bus = RubyZmqFramework::ZeroMQBus.new(5558, [5555, 5556, 5557, 5559, 5560, 5561])
 
 registry = RubyZmqFramework::StateRegistry.new(bus)
 
