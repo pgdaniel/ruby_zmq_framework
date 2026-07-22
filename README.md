@@ -95,6 +95,6 @@ This needs an actual CAN or virtual CAN (`vcan0`) interface present on the machi
 
 ## Python Nodes (e.g. a `cantools`-based DBC decoder)
 
-The bus is just two-frame `[topic, json_payload]` ZeroMQ pub/sub, so non-Ruby processes can join it directly. The Python counterpart — `ZeroMQBus` mirroring the Ruby class and `FrameworkNode` mirroring `FrameworkModule` (same automatic `:heartbeat`, so a `StateRegistry` node sees Python processes in `active_nodes` exactly like Ruby ones) — lives in a companion repo: **[ruby_zmq_framework_python](https://github.com/pgdaniel/ruby_zmq_framework_python)**.
+The bus is just two-frame `[topic, json_payload]` ZeroMQ pub/sub, so non-Ruby processes can join it directly. A standalone Python library — `ZeroMQBus` and `FrameworkNode` (same automatic `:heartbeat`, so a `StateRegistry` node sees Python processes in `active_nodes` exactly like Ruby ones) — is interoperable with this gem over that shared wire format: **[python_zmq_framework](https://github.com/pgdaniel/python_zmq_framework)**.
 
 Its example DBC-decoder stand-in binds to port 5561, which `run_state_registry.rb`'s `peer_ports` already includes, so the two repos' examples talk to each other out of the box.
