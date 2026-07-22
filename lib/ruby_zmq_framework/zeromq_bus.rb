@@ -36,7 +36,15 @@ module RubyZmqFramework
     end
 
     def publish(topic, payload = {})
-      check! @pub.send_strings([topic.to_s, payload.to_json]), "publish #{topic}"
+      json = payload.to_json
+      check! @pub.send_strings([topic.to_s, json]), "publish #{topic}"
+
+      # A SUB socket never connects back to its own PUB, so without this,
+      # two modules sharing one bus in the same process could not hear each
+      # other. Delivering the serialized form keeps the payload
+      # representation identical whether a message arrived locally or over
+      # the wire (string keys become symbols either way).
+      dispatch(topic.to_s, json)
     end
 
     private
@@ -79,25 +87,31 @@ module RubyZmqFramework
     # A bad payload or a raising subscriber must never kill the listener
     # thread: one poisoned message would otherwise leave the node deaf for
     # good while its heartbeat keeps reporting "ok".
+    # Runs entirely inside the Monitor, which is reentrant: dispatch happens
+    # on the listener thread AND on whichever thread called publish, and
+    # serializing them guarantees a subscriber's handle_message is never
+    # executed concurrently — while a handler that publishes from within
+    # handle_message simply re-enters the lock it already holds.
     def dispatch(topic_str, json)
-      # Dup so a handler that subscribes mid-dispatch can't mutate the list
-      # we're iterating. to_sym only happens below, for topics somebody has
-      # subscribed to — never for arbitrary strings off the network.
-      subscribers = @subscribers_lock.synchronize { (@local_subscribers[topic_str] || []).dup }
-      return if subscribers.empty?
+      @subscribers_lock.synchronize do
+        subscribers = @local_subscribers[topic_str]
+        return if subscribers.nil? || subscribers.empty?
 
-      begin
-        payload = JSON.parse(json, symbolize_names: true)
-      rescue JSON::ParserError => e
-        warn "[Framework Error] Dropping malformed payload on #{topic_str}: #{e.message}"
-        return
-      end
+        begin
+          payload = JSON.parse(json, symbolize_names: true)
+        rescue JSON::ParserError => e
+          warn "[Framework Error] Dropping malformed payload on #{topic_str}: #{e.message}"
+          return
+        end
 
-      topic = topic_str.to_sym
-      subscribers.each do |mod|
-        mod.handle_message(topic, payload)
-      rescue StandardError => e
-        warn "[Framework Error] #{mod.class} failed handling #{topic}: #{e.message}"
+        topic = topic_str.to_sym
+        # Dup so a handler that subscribes mid-dispatch can't mutate the
+        # list we're iterating.
+        subscribers.dup.each do |mod|
+          mod.handle_message(topic, payload)
+        rescue StandardError => e
+          warn "[Framework Error] #{mod.class} failed handling #{topic}: #{e.message}"
+        end
       end
     end
   end

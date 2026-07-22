@@ -23,6 +23,25 @@ class ZeroMQBusTest < Minitest::Test
     assert_equal :ping, topic
     assert_equal({ seq: 1 }, payload)
   end
+
+  def test_local_subscribers_hear_messages_published_on_their_own_bus
+    bus = RubyZmqFramework::ZeroMQBus.new(free_port)
+
+    received = Queue.new
+    listener = Object.new
+    listener.define_singleton_method(:handle_message) do |topic, payload|
+      received << [topic, payload]
+    end
+    bus.subscribe(:ping, listener)
+
+    # No slow-joiner sleep needed: local delivery is synchronous.
+    bus.publish(:ping, { seq: 5, "string_key" => true })
+
+    topic, payload = received.pop(true)
+    assert_equal :ping, topic
+    # The JSON round-trip normalizes keys exactly as wire delivery would.
+    assert_equal({ seq: 5, string_key: true }, payload)
+  end
 end
 
 # Exercises the listener against traffic a well-behaved framework peer would
