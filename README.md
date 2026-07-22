@@ -36,11 +36,11 @@ lib/ruby_zmq_framework/framework.rb       # StrictContract + FrameworkModule (in
 lib/ruby_zmq_framework/zeromq_bus.rb      # ZeroMQBus
 lib/ruby_zmq_framework/state_registry.rb  # StateRegistry
 lib/ruby_zmq_framework/can_bridge.rb      # CanBridge (SocketCAN -> bus)
-examples/                                 # Runnable example nodes (examples/python/ for the Python ones)
+examples/                                 # Runnable example nodes
 test/                                     # Minitest suite (`rake test`)
-python/ruby_zmq_framework/                # Python counterpart: ZeroMQBus + FrameworkNode
-python/tests/                             # unittest suite for the Python side
 ```
+
+The Python counterpart (`ZeroMQBus` + `FrameworkNode`, for e.g. a `cantools`-based DBC decoder) lives in a separate repo — see [Python Nodes](#python-nodes-eg-a-cantools-based-dbc-decoder) below.
 
 ## Running the Example
 
@@ -95,19 +95,6 @@ This needs an actual CAN or virtual CAN (`vcan0`) interface present on the machi
 
 ## Python Nodes (e.g. a `cantools`-based DBC decoder)
 
-The bus is just two-frame `[topic, json_payload]` ZeroMQ pub/sub, so non-Ruby processes can join it directly. `python/ruby_zmq_framework/` is a small, wire-compatible counterpart to the gem: `ZeroMQBus` mirrors the Ruby class, and `FrameworkNode` mirrors `FrameworkModule` — subclass it, implement `handle_message(topic, payload)`, and you get the same automatic `:heartbeat` broadcast every 5 seconds for free, so a `StateRegistry` node sees Python processes in `active_nodes` exactly like Ruby ones.
+The bus is just two-frame `[topic, json_payload]` ZeroMQ pub/sub, so non-Ruby processes can join it directly. The Python counterpart — `ZeroMQBus` mirroring the Ruby class and `FrameworkNode` mirroring `FrameworkModule` (same automatic `:heartbeat`, so a `StateRegistry` node sees Python processes in `active_nodes` exactly like Ruby ones) — lives in a companion repo: **[ruby_zmq_framework_python](https://github.com/pgdaniel/ruby_zmq_framework_python)**.
 
-**Prerequisite:**
-```bash
-pip install -r python/requirements.txt   # just pyzmq
-```
-
-`examples/python/run_dbc_decoder.py` is a stand-in for a real `cantools`-based DBC decoder: it binds to 5561, connects to the State Registry (5558), and broadcasts decoded signals under a topic per DBC message name (e.g. `engine_data`).
-```bash
-python3 examples/python/run_dbc_decoder.py
-```
-Run it alongside `run_state_registry.rb` (whose `peer_ports` already includes 5561) and you'll see the Python node's heartbeat and telemetry show up in the registry's snapshots.
-
-Python tests: `python -m unittest discover -s python/tests`.
-
-**Note on ZeroMQ sockets and threads:** a PUB socket must not be written to concurrently from multiple threads without synchronization — `FrameworkNode`'s heartbeat thread and your own code both publish through it, so `ZeroMQBus.publish` takes a lock around every send. Keep that in mind if you build anything that touches `_pub`/`_sub` directly instead of going through `publish`/`subscribe`.
+Its example DBC-decoder stand-in binds to port 5561, which `run_state_registry.rb`'s `peer_ports` already includes, so the two repos' examples talk to each other out of the box.
