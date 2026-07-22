@@ -13,8 +13,8 @@ module RubyZmqFramework
         @required_methods || []
       end
 
-      def new(*args, &block)
-        instance = super(*args, &block)
+      def new(...)
+        instance = super
         missing = required_methods - instance.methods
         if missing.any?
           raise NotImplementedError,
@@ -37,7 +37,7 @@ module RubyZmqFramework
     # Prepended so it wraps whatever initialize the concrete module defines,
     # starting the heartbeat only once @bus has actually been assigned.
     module Heartbeat
-      def initialize(*args, **kwargs, &block)
+      def initialize(...)
         super
         start_heartbeat
       end
