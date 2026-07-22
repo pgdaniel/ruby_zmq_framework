@@ -63,6 +63,19 @@ class ZeroMQBusResilienceTest < Minitest::Test
     assert_equal({ seq: 2 }, payload)
   end
 
+  def test_unknown_topics_do_not_grow_the_subscriber_map
+    @bus.subscribe(:ping, @listener)
+    sleep 0.3 # slow-joiner
+
+    50.times { |i| @raw_pub.send_strings(["noise_#{i}", "{}"]) }
+    @raw_pub.send_strings(["ping", '{"seq":4}'])
+
+    # ZMQ preserves per-connection ordering, so once :ping arrives all the
+    # noise topics have already been through the dispatch path.
+    Timeout.timeout(3) { @received.pop }
+    assert_equal ["ping"], @bus.instance_variable_get(:@local_subscribers).keys
+  end
+
   def test_a_raising_subscriber_does_not_starve_the_others
     angry = Object.new
     angry.define_singleton_method(:handle_message) { |_t, _p| raise "boom" }
