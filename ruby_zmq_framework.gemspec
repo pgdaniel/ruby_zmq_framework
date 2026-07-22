@@ -11,6 +11,9 @@ Gem::Specification.new do |spec|
                       "strict runtime contract (similar to TypeScript interfaces) without " \
                       "requiring compilation or type-checkers."
   spec.license     = "MIT"
+  spec.homepage    = "https://github.com/pgdaniel/ruby_zmq_framework"
+
+  spec.metadata["source_code_uri"] = spec.homepage
 
   spec.required_ruby_version = ">= 2.7"
 
