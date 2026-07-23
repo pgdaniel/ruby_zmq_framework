@@ -1,7 +1,10 @@
 require 'sinatra'
 require_relative '../lib/ruby_zmq_framework'
 
-# Global state to share between the ZeroMQ background thread and Sinatra web threads
+# Global state to share between the ZeroMQ background thread and Sinatra web threads.
+# Demo-only shortcut: this hash is written by the bus dispatch thread and read by
+# Sinatra's threads with no lock. That's tolerable for two scalar fields on MRI,
+# but real code should wrap shared state in a Mutex (or use a concurrent structure).
 $latest_telemetry = { rpm: 0, status: 'Waiting for data...' }
 
 # 1. Define our Web Bridge Node using our strict contract

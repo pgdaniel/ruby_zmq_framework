@@ -19,13 +19,17 @@ Then install the Ruby dependencies:
 bundle install
 ```
 
+> **Note:** the gem binds to ZeroMQ through [`ffi-rzmq`](https://github.com/chuckremes/ffi-rzmq), which is stable but hasn't seen a release in years. If you need libzmq features newer than ZeroMQ 4.x basics, look at `cztop` — the wire format here (plain two-frame PUB/SUB) works with any binding.
+
 ## How It Works
 
 1.  **Strict Contract:** Any class that includes `RubyZmqFramework::FrameworkModule` must implement a `handle_message(topic, payload)` method. If it does not, the framework raises a `NotImplementedError` the moment `.new` is called.
-2.  **Peer-to-Peer Bus:** `RubyZmqFramework::ZeroMQBus` acts as a decentralized message broker. Modules bind to a local port to publish data and connect to peer ports to subscribe to data. There is no dynamic discovery — every node's port has to be listed in every peer's `peer_ports` array up front.
+2.  **Peer-to-Peer Bus:** `RubyZmqFramework::ZeroMQBus` acts as a decentralized message broker. Modules bind to a local port to publish data and connect to peer ports to subscribe to data. There is no dynamic discovery — every node's port has to be listed in every peer's `peer_ports` array up front. Peers can be Integers (loopback ports), `"host:port"` strings, or full ZeroMQ endpoints (`"tcp://10.0.0.5:5555"`); pass `bind_host: "0.0.0.0"` to accept peers from other machines, or `0` as your port to bind an OS-assigned ephemeral one (read it back via `bus.port`). Messages published on a bus are also delivered synchronously to subscribers on that same bus.
 3.  **Cross-Process Communication:** Modules do not need to run in the same Ruby script. They communicate entirely over TCP sockets.
-4.  **Auto-Heartbeat:** Every `FrameworkModule` node automatically broadcasts a `:heartbeat` (`node_name`, `status`, `timestamp`) every 5 seconds in a background thread, with no extra code required.
+4.  **Auto-Heartbeat:** Every `FrameworkModule` node automatically broadcasts a `:heartbeat` (`node_name`, `status`, `timestamp`) every 5 seconds in a background thread, with no extra code required. The identity defaults to the class name — set `@node_name` in your `initialize` when running several instances of one class, or they will overwrite each other in a `StateRegistry`. Call `stop_heartbeat` to end it gracefully.
 5.  **State Registry:** `RubyZmqFramework::StateRegistry` is a passive, in-memory node that caches heartbeats and telemetry from whatever topics it's subscribed to, and replays its whole store as a `:global_state_snapshot` broadcast whenever it sees a `:request_global_state` message. It never blocks and never crashes when a peer goes quiet — a silent node's entry in `active_nodes` simply stops getting a fresher timestamp.
+6.  **Resilience:** The listener thread survives anything the network throws at it — non-framework frame layouts and malformed JSON are dropped with a warning, and each subscriber's `handle_message` is rescued individually so one raising handler can't starve the others (or kill the listener). ZeroMQ-level failures (bind, connect, publish) raise `RubyZmqFramework::Error` instead of failing silently. `handle_message` calls on one bus are serialized, so handlers never run concurrently.
+7.  **Clean Shutdown:** `bus.close` stops the listener and releases the sockets and context; `node.stop_heartbeat` ends the heartbeat thread; `CanBridge#close` stops the whole bridge. Stop your nodes first, then close the bus — publishing on a closed bus raises `RubyZmqFramework::Error`.
 
 ## Project Layout
 

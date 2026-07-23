@@ -10,6 +10,11 @@ module RubyZmqFramework
   # raw ioctl/struct calls (see linux/can.h, linux/sockios.h) rather than
   # a third-party gem, since no maintained "socketcan" gem is published on
   # RubyGems.
+  #
+  # Classic CAN only: reads assume the 16-byte struct can_frame. That is
+  # safe even on an FD-enabled interface — the kernel only delivers
+  # 72-byte canfd_frames to sockets that opt in via CAN_RAW_FD_FRAMES,
+  # which this one never does — but it means FD traffic is invisible here.
   class CanBridge
     include FrameworkModule
 

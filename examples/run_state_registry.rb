@@ -10,6 +10,8 @@ bus = RubyZmqFramework::ZeroMQBus.new(5558, [5555, 5556, 5557, 5559, 5560, 5561]
 
 registry = RubyZmqFramework::StateRegistry.new(bus)
 
+# Local dispatch means the registry hears its own heartbeat too, so
+# StateRegistry lists itself in active_nodes alongside remote peers.
 bus.subscribe(:heartbeat, registry)
 bus.subscribe(:engine_data, registry)
 bus.subscribe(:can_frame, registry)
