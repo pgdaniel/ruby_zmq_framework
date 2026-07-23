@@ -14,14 +14,17 @@ Gem::Specification.new do |spec|
   spec.homepage    = "https://github.com/pgdaniel/ruby_zmq_framework"
 
   spec.metadata["source_code_uri"] = spec.homepage
+  spec.metadata["changelog_uri"] = "#{spec.homepage}/blob/master/CHANGELOG.md"
+  spec.metadata["rubygems_mfa_required"] = "true"
 
   spec.required_ruby_version = ">= 2.7"
 
-  spec.files         = Dir["lib/**/*.rb"] + ["README.md", "LICENSE.txt"]
+  spec.files         = Dir["lib/**/*.rb"] + ["README.md", "CHANGELOG.md", "LICENSE.txt"]
   spec.require_paths = ["lib"]
 
+  # json is deliberately not declared: it is a default gem shipped with
+  # every supported Ruby.
   spec.add_dependency "ffi-rzmq", "~> 2.0"
-  spec.add_dependency "json", "~> 2.0"
 
   spec.add_development_dependency "minitest", "~> 5.20"
   spec.add_development_dependency "rake", "~> 13.0"
