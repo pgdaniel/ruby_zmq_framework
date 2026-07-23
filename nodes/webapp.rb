@@ -1,13 +1,15 @@
 require 'sinatra'
 require_relative '../lib/ruby_zmq_framework'
 
-# Global state to share between the ZeroMQ background thread and Sinatra web threads.
-# Demo-only shortcut: this hash is written by the bus dispatch thread and read by
-# Sinatra's threads with no lock. That's tolerable for two scalar fields on MRI,
-# but real code should wrap shared state in a Mutex (or use a concurrent structure).
+$stdout.sync = true
+
+# Global state shared between the bus dispatch thread and Sinatra web threads.
+# Demo-only shortcut: written and read with no lock. That's tolerable for two
+# scalar fields on MRI, but real code should wrap shared state in a Mutex.
 $latest_telemetry = { rpm: 0, status: 'Waiting for data...' }
 
-# 1. Define our Web Bridge Node using our strict contract
+# HTTP bridge onto the bus: shows live telemetry, sends commands back.
+# Publishes: throttle_request. Subscribes: engine_data.
 class WebBridge
   include RubyZmqFramework::FrameworkModule
 
@@ -15,41 +17,28 @@ class WebBridge
     @bus = bus
   end
 
-  # Fulfills the strict contract to listen to the bus
   def handle_message(topic, payload)
-    if topic == :engine_data
-      $latest_telemetry[:rpm] = payload[:rpm]
-      $latest_telemetry[:status] = 'Live'
-    end
+    return unless topic == :engine_data
+
+    $latest_telemetry[:rpm] = payload[:rpm]
+    $latest_telemetry[:status] = 'Live'
   end
 end
 
-# 2. Spin up the ZeroMQ connection before starting the web server
-# Bind to 5557, connect to the ECU on 5555
-zmq_bus = RubyZmqFramework::ZeroMQBus.new(5557, [5555])
-bridge = WebBridge.new(zmq_bus)
+bridge = RubyZmqFramework.boot(WebBridge)
+puts 'online'
 
-# Subscribe to engine data
-zmq_bus.subscribe(:engine_data, bridge)
-puts "Web Bridge ZMQ Node Online..."
-
-# 3. Sinatra Web Server Configuration
-set :port, 4567
+set :port, ENV.fetch('WEB_PORT', '4567').to_i
 set :bind, '0.0.0.0'
 
-# A simple GET route to view the live data
 get '/' do
   erb :index
 end
 
-# A POST route to send commands back down the ZeroMQ bus
 post '/command' do
   throttle_pos = params[:throttle].to_i
-  
-  # Broadcast onto the ZeroMQ network
   bridge.broadcast(:throttle_request, { position: throttle_pos })
-  
-  puts "[Web] Broadcasted throttle command: #{throttle_pos}%"
+  puts "Broadcasted throttle command: #{throttle_pos}%"
   redirect '/'
 end
 
@@ -67,7 +56,7 @@ __END__
     button { background: #ef4444; color: white; border: none; padding: 10px 15px; border-radius: 5px; cursor: pointer; }
     button:hover { background: #dc2626; }
   </style>
-  <!-- Refresh the page every 1 second to poll the latest ZMQ state -->
+  <!-- Refresh the page every 1 second to poll the latest state -->
   <meta http-equiv="refresh" content="1">
 </head>
 <body>
