@@ -25,6 +25,12 @@ module RubyZmqFramework
     bus = ZeroMQBus.new(ENV.fetch('BUS_PORT', '0').to_i, env_list('BUS_PEERS'))
     node = node_class.new(bus, *args, **kwargs)
     env_list('BUS_SUBSCRIBES').each { |topic| bus.subscribe(topic, node) }
+
+    # Booted nodes are processes managed by a supervisor (bin/flowctl) or a
+    # terminal: exit quietly on TERM/INT instead of dumping a backtrace
+    # from an interrupted sleep. Frameworks that install their own traps
+    # afterwards (e.g. Sinatra) simply override these.
+    %w[TERM INT].each { |sig| trap(sig) { exit } }
     node
   end
 

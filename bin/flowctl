@@ -1,0 +1,75 @@
+#!/usr/bin/env ruby
+# Runs a flow manifest: assigns each node a free port, computes the peer
+# wiring, spawns every node with that wiring in its environment, and
+# streams their output with a [name] prefix. Ctrl-C stops everything.
+#
+#   bundle exec bin/flowctl              # runs ./flow.yml
+#   bundle exec bin/flowctl other.yml
+#   bundle exec bin/flowctl --plan       # print computed wiring, run nothing
+
+$LOAD_PATH.unshift File.expand_path('../lib', __dir__)
+require 'ruby_zmq_framework'
+require 'socket'
+require 'optparse'
+
+plan_only = false
+OptionParser.new do |opts|
+  opts.banner = 'Usage: bin/flowctl [--plan] [flow.yml]'
+  opts.on('--plan', 'Print the computed wiring and exit') { plan_only = true }
+end.parse!
+
+manifest = ARGV.first || 'flow.yml'
+root = File.expand_path('..', __dir__)
+flow = RubyZmqFramework::Flow.load(File.expand_path(manifest, Dir.pwd))
+
+def free_port
+  server = TCPServer.new('127.0.0.1', 0)
+  port = server.addr[1]
+  server.close
+  port
+end
+
+ports = flow.nodes.to_h { |node| [node.name, free_port] }
+wiring = flow.wiring(ports)
+
+if plan_only
+  wiring.each do |name, env|
+    puts name
+    env.each { |k, v| puts "  #{k}=#{v}" }
+  end
+  exit
+end
+
+children = {}
+flow.nodes.each do |node|
+  reader, writer = IO.pipe
+  pid = spawn(wiring[node.name], node.cmd, out: writer, err: writer, chdir: root)
+  writer.close
+  children[pid] = node.name
+
+  Thread.new do
+    reader.each_line { |line| puts "[#{node.name}] #{line}" }
+  end
+end
+
+puts "[flowctl] started #{children.size} nodes: #{children.values.join(', ')}"
+
+begin
+  until children.empty?
+    pid = Process.wait
+    puts "[flowctl] #{children.delete(pid)} exited with status #{$?.exitstatus.inspect}"
+  end
+  puts '[flowctl] all nodes exited'
+rescue Interrupt
+  puts "\n[flowctl] shutting down #{children.size} nodes"
+  children.each_key do |pid|
+    Process.kill('TERM', pid)
+  rescue Errno::ESRCH
+    nil
+  end
+  children.each_key do |pid|
+    Process.wait(pid)
+  rescue Errno::ECHILD
+    nil
+  end
+end
