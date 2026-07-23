@@ -5,6 +5,24 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- The repo is now a reference implementation of a flow-based,
+  language-agnostic node runtime ("Node-RED without the UI"): the graph
+  lives in `flow.yml`, `bin/flowctl` computes wiring and runs it, nodes
+  are blackbox processes configured entirely from the environment, and
+  `PROTOCOL.md` is the one-page contract for joining from any language.
+  `examples/` (hand-wired scripts) became `nodes/` (env-wired processes).
+
+### Added (flow runtime)
+- `RubyZmqFramework.boot`: builds a node from `BUS_PORT`, `BUS_PEERS`,
+  `BUS_SUBSCRIBES`, and `NODE_NAME`; standalone-friendly when unset.
+- `RubyZmqFramework::Flow`: parses the manifest and computes each node's
+  peer wiring from topic publishers/subscribers.
+- `bin/flowctl` (with `--plan`): port assignment, spawning, prefixed
+  output streaming, Ctrl-C teardown.
+- `PROTOCOL.md`: transport, wire format, env contract, heartbeat schema,
+  and a minimal Python node.
+
 ### Fixed
 - The `ZeroMQBus` listener thread no longer dies silently on malformed
   JSON, non-two-frame messages, or exceptions raised inside a

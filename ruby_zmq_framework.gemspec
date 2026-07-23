@@ -6,10 +6,11 @@ Gem::Specification.new do |spec|
   spec.authors     = ["Paul Daniel"]
   spec.email       = ["paulgdan@gmail.com"]
 
-  spec.summary     = "Lightweight pure-Ruby pub/sub framework over ZeroMQ with strict module contracts"
-  spec.description = "Decouples modules using a peer-to-peer ZeroMQ network and enforces a " \
-                      "strict runtime contract (similar to TypeScript interfaces) without " \
-                      "requiring compilation or type-checkers."
+  spec.summary     = "Flow-based, language-agnostic node runtime over ZeroMQ — Node-RED without the UI"
+  spec.description = "Blackbox node processes wired together by pub/sub topics: the graph lives " \
+                      "in a flow.yml manifest, nodes are configured entirely from the environment, " \
+                      "and a one-page protocol lets any language join the bus. Includes a hardened " \
+                      "ZeroMQ transport with strict runtime module contracts."
   spec.license     = "MIT"
   spec.homepage    = "https://github.com/pgdaniel/ruby_zmq_framework"
 

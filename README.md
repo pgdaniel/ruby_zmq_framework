@@ -1,104 +1,129 @@
-# Ruby ZeroMQ Pub/Sub Framework
+# ruby_zmq_framework
 
-This is a lightweight, pure-Ruby framework for decoupling modules using a peer-to-peer ZeroMQ network. It enforces a strict module contract (similar to TypeScript interfaces) at runtime without requiring compilation or type-checkers like Sorbet.
+**Think Node-RED without the UI: a flow-based, language-agnostic runtime for
+blackbox nodes wired together by topics.**
 
-## Prerequisites
+- **Nodes** are independent OS processes. Each one does one job, lives in one
+  file, and knows nothing about any other node — not their ports, not their
+  names, not their language.
+- **Wires** are pub/sub topics carrying JSON, over ZeroMQ.
+- **The graph is data**: [`flow.yml`](flow.yml) is the only artifact that
+  knows the topology. `bin/flowctl` reads it, computes the wiring, and runs
+  everything.
+- **The contract is one page**: [`PROTOCOL.md`](PROTOCOL.md) is everything a
+  node in any language needs to join.
 
-You need the ZeroMQ library installed on your system.
+The design goal is LLM-friendliness: each node is a task you can hand to an
+agent with the protocol page and a one-line description ("write a Go node
+that decodes DBC frames") — it never needs the rest of the repo in context.
 
-```bash
-# Ubuntu / Debian
-sudo apt-get install libzmq3-dev
+## Quick start
 
-# macOS (Homebrew)
-brew install zeromq
-```
+You need the ZeroMQ library (`libzmq3-dev` on Debian/Ubuntu, `brew install
+zeromq` on macOS), then:
 
-Then install the Ruby dependencies:
 ```bash
 bundle install
+bundle exec bin/flowctl
 ```
 
-> **Note:** the gem binds to ZeroMQ through [`ffi-rzmq`](https://github.com/chuckremes/ffi-rzmq), which is stable but hasn't seen a release in years. If you need libzmq features newer than ZeroMQ 4.x basics, look at `cztop` — the wire format here (plain two-frame PUB/SUB) works with any binding.
+That runs the demo graph from `flow.yml`: a simulated ECU blasting RPM data,
+a telemetry node that commands a throttle cut on over-rev, a web dashboard
+on <http://localhost:4567>, a state registry caching heartbeats and
+telemetry, and a dashboard consumer syncing the registry's snapshot. Output
+is streamed with a `[node_name]` prefix; Ctrl-C stops everything.
 
-## How It Works
+`bundle exec bin/flowctl --plan` prints the computed wiring without running
+anything.
 
-1.  **Strict Contract:** Any class that includes `RubyZmqFramework::FrameworkModule` must implement a `handle_message(topic, payload)` method. If it does not, the framework raises a `NotImplementedError` the moment `.new` is called.
-2.  **Peer-to-Peer Bus:** `RubyZmqFramework::ZeroMQBus` acts as a decentralized message broker. Modules bind to a local port to publish data and connect to peer ports to subscribe to data. There is no dynamic discovery — every node's port has to be listed in every peer's `peer_ports` array up front. Peers can be Integers (loopback ports), `"host:port"` strings, or full ZeroMQ endpoints (`"tcp://10.0.0.5:5555"`); pass `bind_host: "0.0.0.0"` to accept peers from other machines, or `0` as your port to bind an OS-assigned ephemeral one (read it back via `bus.port`). Messages published on a bus are also delivered synchronously to subscribers on that same bus.
-3.  **Cross-Process Communication:** Modules do not need to run in the same Ruby script. They communicate entirely over TCP sockets.
-4.  **Auto-Heartbeat:** Every `FrameworkModule` node automatically broadcasts a `:heartbeat` (`node_name`, `status`, `timestamp`) every 5 seconds in a background thread, with no extra code required. The identity defaults to the class name — set `@node_name` in your `initialize` when running several instances of one class, or they will overwrite each other in a `StateRegistry`. Call `stop_heartbeat` to end it gracefully.
-5.  **State Registry:** `RubyZmqFramework::StateRegistry` is a passive, in-memory node that caches heartbeats and telemetry from whatever topics it's subscribed to, and replays its whole store as a `:global_state_snapshot` broadcast whenever it sees a `:request_global_state` message. It never blocks and never crashes when a peer goes quiet — a silent node's entry in `active_nodes` simply stops getting a fresher timestamp.
-6.  **Resilience:** The listener thread survives anything the network throws at it — non-framework frame layouts and malformed JSON are dropped with a warning, and each subscriber's `handle_message` is rescued individually so one raising handler can't starve the others (or kill the listener). ZeroMQ-level failures (bind, connect, publish) raise `RubyZmqFramework::Error` instead of failing silently. `handle_message` calls on one bus are serialized, so handlers never run concurrently.
-7.  **Clean Shutdown:** `bus.close` stops the listener and releases the sockets and context; `node.stop_heartbeat` ends the heartbeat thread; `CanBridge#close` stops the whole bridge. Stop your nodes first, then close the bus — publishing on a closed bus raises `RubyZmqFramework::Error`.
+## Writing a node
 
-## Project Layout
+A Ruby node is a class with one method, booted from the environment:
 
+```ruby
+require_relative '../lib/ruby_zmq_framework'
+$stdout.sync = true
+
+class RpmSmoother
+  include RubyZmqFramework::FrameworkModule
+
+  def initialize(bus)
+    @bus = bus
+    @window = []
+  end
+
+  def handle_message(topic, payload)
+    @window = (@window << payload[:rpm]).last(5)
+    broadcast(:engine_data_smooth, { rpm: @window.sum / @window.size })
+  end
+end
+
+RubyZmqFramework.boot(RpmSmoother)
+sleep
 ```
-lib/ruby_zmq_framework.rb                 # Entrypoint, requires the rest of the gem
-lib/ruby_zmq_framework/version.rb         # Gem version
-lib/ruby_zmq_framework/framework.rb       # StrictContract + FrameworkModule (incl. heartbeat)
-lib/ruby_zmq_framework/zeromq_bus.rb      # ZeroMQBus
-lib/ruby_zmq_framework/state_registry.rb  # StateRegistry
-lib/ruby_zmq_framework/can_bridge.rb      # CanBridge (SocketCAN -> bus)
-examples/                                 # Runnable example nodes
-test/                                     # Minitest suite (`rake test`)
+
+Note what's absent: no ports, no peers, no subscribe calls. Wiring comes
+from environment variables (`BUS_PORT`, `BUS_PEERS`, `BUS_SUBSCRIBES`,
+`NODE_NAME` — see `PROTOCOL.md`), which `flowctl` computes from the node's
+entry in the manifest:
+
+```yaml
+  rpm_smoother:
+    cmd: ruby nodes/rpm_smoother.rb
+    subscribes: [engine_data]
+    publishes: [engine_data_smooth]
 ```
 
-The Python counterpart (`ZeroMQBus` + `FrameworkNode`, for e.g. a `cantools`-based DBC decoder) lives in a separate repo — see [Python Nodes](#python-nodes-eg-a-cantools-based-dbc-decoder) below.
+Run standalone (no environment needed — it binds an ephemeral port) to poke
+at a node in isolation: `bundle exec ruby nodes/rpm_smoother.rb`.
 
-## Running the Example
+Every node automatically heartbeats every 5 seconds. `StrictContract`
+raises at `.new` if a node forgets `handle_message` — loudly and
+immediately, which is exactly the feedback an iterating agent needs.
 
-The `examples/` directory contains two nodes that talk to each other:
-*   `run_ecu.rb`: Simulates an engine unit blasting out RPM data.
-*   `run_telemetry.rb`: Listens to the RPM data and sends a command back if the RPM exceeds a threshold.
+## Nodes in other languages
 
-To see them communicate, open two separate terminal windows.
+The bus is just two-frame ZeroMQ pub/sub — `[topic, json]` — and the whole
+contract fits on one page: [`PROTOCOL.md`](PROTOCOL.md), including a
+complete minimal Python node. Follow it, add a `cmd` entry to `flow.yml`,
+and the language never matters again. A Python companion library exists at
+[python_zmq_framework](https://github.com/pgdaniel/python_zmq_framework)
+(it predates the env-var contract; a node using it just reads the four
+variables and passes them in).
 
-**Terminal 1:**
+## What's in the box
+
+| piece | file | job |
+|-------|------|-----|
+| `ZeroMQBus` | `lib/ruby_zmq_framework/zeromq_bus.rb` | hardened transport: poison-message-proof listener, per-handler error isolation, local dispatch, clean `close` |
+| `FrameworkModule` | `lib/ruby_zmq_framework/framework.rb` | node mixin: contract enforcement, auto-heartbeat, `broadcast`, `node_name`, `stop_heartbeat` |
+| `Flow` | `lib/ruby_zmq_framework/flow.rb` | parses `flow.yml`, computes each node's env wiring |
+| `flowctl` | `bin/flowctl` | assigns ports, spawns nodes, prefixes output, tears down |
+| `StateRegistry` | `lib/ruby_zmq_framework/state_registry.rb` | passive cluster-state cache; replays snapshots on request |
+| `CanBridge` | `lib/ruby_zmq_framework/can_bridge.rb` | real SocketCAN frames → `can_frame` topic (classic CAN, via raw ioctls, no extra gem) |
+| demo nodes | `nodes/*.rb` | one blackbox process per file |
+
+Delivery is fire-and-forget (latest-value-wins; slow consumers drop old
+messages), handlers on one bus never run concurrently, and a bad message or
+a raising handler can never kill a node's listener. See `CHANGELOG.md` for
+the full hardening history.
+
+> **Note:** ZeroMQ is reached through
+> [`ffi-rzmq`](https://github.com/chuckremes/ffi-rzmq), which is stable but
+> hasn't seen a release in years. The wire format is deliberately plain
+> two-frame PUB/SUB, so swapping bindings — or the transport itself — stays
+> a contained change behind the three-method bus interface
+> (`publish`/`subscribe`/`close`).
+
+## CAN hardware
+
+Uncomment the `can_bridge` node in `flow.yml` (set `CAN_IFACE`, e.g.
+`vcan0`) to relay real SocketCAN frames onto the bus as `can_frame`
+messages. Needs an actual or virtual CAN interface; fails fast with the
+underlying `Errno` if it doesn't exist.
+
+## Tests
+
 ```bash
-bundle exec ruby examples/run_telemetry.rb
+bundle exec rake test
 ```
-
-**Terminal 2:**
-```bash
-bundle exec ruby examples/run_ecu.rb
-```
-
-You should see the ECU start broadcasting and the Telemetry node reacting in real-time.
-
-## Web App Example (Sinatra)
-
-We've included a lightweight web bridge that acts as a node on the ZeroMQ bus. It listens to the telemetry data and provides an HTTP endpoint to trigger commands. Sinatra is installed as part of `bundle install` (see the `:examples` group in the `Gemfile`).
-
-**Running the Web Node:**
-Open a third terminal window while the ECU is running:
-```bash
-bundle exec ruby examples/run_webapp.rb
-```
-Then navigate to `http://localhost:4567` in your browser. You will see real-time RPM data populating the HTML and can use the UI to send a kill command back through the ZeroMQ network.
-
-## State Registry Example
-
-`run_state_registry.rb` binds to 5558 and caches heartbeats/telemetry from the ECU, Telemetry, Web Bridge, Dashboard Consumer, and CAN Bridge nodes, printing a snapshot every 5 seconds:
-```bash
-bundle exec ruby examples/run_state_registry.rb
-```
-
-`run_dashboard_consumer.rb` demonstrates the consumer side of the pattern: it broadcasts `:request_global_state` on startup and caches whatever `:global_state_snapshot` comes back:
-```bash
-bundle exec ruby examples/run_dashboard_consumer.rb
-```
-
-## CAN Bridge Example (real hardware)
-
-`run_can_bridge.rb` reads raw frames off a real SocketCAN interface (`can0` by default, or set `CAN_IFACE`) using Ruby's built-in `Socket` class plus a couple of raw ioctl calls — no extra CAN gem required — and rebroadcasts each frame as `:can_frame` (`id`, `extended`, `dlc`, `data`):
-```bash
-CAN_IFACE=can0 bundle exec ruby examples/run_can_bridge.rb
-```
-This needs an actual CAN or virtual CAN (`vcan0`) interface present on the machine; it fails fast with the underlying `Errno` (e.g. `ENODEV`) if the interface doesn't exist.
-
-## Python Nodes (e.g. a `cantools`-based DBC decoder)
-
-The bus is just two-frame `[topic, json_payload]` ZeroMQ pub/sub, so non-Ruby processes can join it directly. A standalone Python library — `ZeroMQBus` and `FrameworkNode` (same automatic `:heartbeat`, so a `StateRegistry` node sees Python processes in `active_nodes` exactly like Ruby ones) — is interoperable with this gem over that shared wire format: **[python_zmq_framework](https://github.com/pgdaniel/python_zmq_framework)**.
-
-Its example DBC-decoder stand-in binds to port 5561, which `run_state_registry.rb`'s `peer_ports` already includes, so the two repos' examples talk to each other out of the box.
