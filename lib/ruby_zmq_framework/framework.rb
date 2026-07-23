@@ -54,12 +54,13 @@ module RubyZmqFramework
       @bus.publish(topic, payload)
     end
 
-    # Identity used in heartbeats. Defaults to the class name, but set
-    # @node_name in initialize when running several instances of the same
-    # class — otherwise they overwrite each other in any StateRegistry's
-    # active_nodes. Also covers anonymous classes, whose .name is nil.
+    # Identity used in heartbeats. Precedence: @node_name set by the node
+    # itself, then NODE_NAME from the environment (how bin/flowctl names
+    # the processes it spawns), then the class name. Distinct names matter
+    # when several instances of one class run — otherwise they overwrite
+    # each other in any StateRegistry's active_nodes.
     def node_name
-      @node_name || self.class.name || 'AnonymousNode'
+      @node_name || ENV['NODE_NAME'] || self.class.name || 'AnonymousNode'
     end
 
     # Gracefully stops the heartbeat thread. Call this before closing the
