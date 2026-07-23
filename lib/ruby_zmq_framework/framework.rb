@@ -54,9 +54,28 @@ module RubyZmqFramework
       @bus.publish(topic, payload)
     end
 
+    # Gracefully stops the heartbeat thread. Call this before closing the
+    # bus the node broadcasts on. Wakes the thread out of its interval wait
+    # rather than killing it, so an in-flight broadcast always completes.
+    def stop_heartbeat
+      thread = @heartbeat_thread
+      return unless thread
+
+      @heartbeat_mutex.synchronize do
+        @heartbeat_running = false
+        @heartbeat_wakeup.signal
+      end
+      thread.join(HEARTBEAT_INTERVAL + 1)
+      @heartbeat_thread = nil
+    end
+
     private
 
     def start_heartbeat
+      @heartbeat_mutex = Mutex.new
+      @heartbeat_wakeup = ConditionVariable.new
+      @heartbeat_running = true
+
       @heartbeat_thread = Thread.new do
         loop do
           begin
@@ -68,7 +87,12 @@ module RubyZmqFramework
           rescue StandardError => e
             warn "[Framework Error] Heartbeat failed for #{self.class.name}: #{e.message}"
           end
-          sleep HEARTBEAT_INTERVAL
+
+          keep_going = @heartbeat_mutex.synchronize do
+            @heartbeat_wakeup.wait(@heartbeat_mutex, HEARTBEAT_INTERVAL) if @heartbeat_running
+            @heartbeat_running
+          end
+          break unless keep_going
         end
       end
     end

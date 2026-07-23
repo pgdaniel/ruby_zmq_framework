@@ -26,7 +26,27 @@ module RubyZmqFramework
       # the caller's thread while dispatch runs on the listener thread.
       @local_subscribers = {}
       @subscribers_lock = Monitor.new
+      @running = true
       start_listener
+    end
+
+    # Stops the listener thread and releases both sockets and the context.
+    # Stop anything still publishing on this bus first (heartbeats, reader
+    # threads): publishing on a closed bus raises RubyZmqFramework::Error.
+    # Idempotent.
+    def close
+      return if @closed
+
+      @closed = true
+      @running = false
+      @listener.join(POLL_TIMEOUT_MS / 1000.0 + 1) unless Thread.current == @listener
+
+      [@sub, @pub].each do |sock|
+        sock.setsockopt(ZMQ::LINGER, 0)
+        sock.close
+      end
+      @context.terminate
+      nil
     end
 
     def subscribe(topic, module_instance)
@@ -56,13 +76,15 @@ module RubyZmqFramework
     end
 
     def start_listener
-      Thread.new do
+      @listener = Thread.new do
         poller = ZMQ::Poller.new
         poller.register_readable(@sub)
 
-        loop do
+        while @running
           ready = poller.poll(POLL_TIMEOUT_MS)
           if ready == -1
+            break unless @running
+
             warn "[Framework Error] Listener poll failed: #{ZMQ::Util.error_string}"
             sleep 0.1
             next

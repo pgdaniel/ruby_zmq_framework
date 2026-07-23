@@ -78,4 +78,16 @@ class FrameworkModuleTest < Minitest::Test
     assert_equal "ok", payload[:status]
     assert_kind_of Integer, payload[:timestamp]
   end
+
+  def test_stop_heartbeat_terminates_the_heartbeat_thread
+    bus = FakeBus.new
+    node = CompliantNode.new(bus)
+    refute_nil wait_for { bus.find(:heartbeat) }
+
+    thread = node.instance_variable_get(:@heartbeat_thread)
+    node.stop_heartbeat
+
+    refute thread.alive?, "heartbeat thread must exit promptly on stop"
+    node.stop_heartbeat # idempotent: a second stop must not raise
+  end
 end

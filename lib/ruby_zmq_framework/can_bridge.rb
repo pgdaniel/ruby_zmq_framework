@@ -32,10 +32,23 @@ module RubyZmqFramework
       @bus = bus
       @topic = topic
       @socket = open_can_socket(interface)
+      @running = true
       start_reader
     end
 
     def handle_message(topic, payload); end
+
+    # Stops the whole node: heartbeat, reader thread, CAN socket. Closing
+    # the socket from here is what interrupts the reader's blocking read.
+    def close
+      return unless @running
+
+      @running = false
+      stop_heartbeat
+      @socket.close unless @socket.closed?
+      @reader.join(2)
+      nil
+    end
 
     private
 
@@ -56,12 +69,14 @@ module RubyZmqFramework
     end
 
     def start_reader
-      Thread.new do
-        loop do
+      @reader = Thread.new do
+        while @running
           begin
             raw = @socket.read(FRAME_SIZE)
             broadcast(@topic, self.class.parse_frame(raw)) if raw&.bytesize == FRAME_SIZE
           rescue StandardError => e
+            break unless @running # close interrupted the blocking read
+
             warn "[Framework Error] CanBridge read failed: #{e.message}"
             sleep 1
           end

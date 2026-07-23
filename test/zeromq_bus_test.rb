@@ -2,12 +2,26 @@ require_relative "test_helper"
 require "timeout"
 
 class ZeroMQBusTest < Minitest::Test
-  def test_a_published_message_reaches_a_connected_peer
-    port_a = 15_551
-    port_b = 15_552
+  def setup
+    @buses = []
+  end
 
-    bus_a = RubyZmqFramework::ZeroMQBus.new(port_a, [port_b])
-    bus_b = RubyZmqFramework::ZeroMQBus.new(port_b, [port_a])
+  def teardown
+    @buses.each(&:close)
+  end
+
+  def new_bus(port, peers = [])
+    bus = RubyZmqFramework::ZeroMQBus.new(port, peers)
+    @buses << bus
+    bus
+  end
+
+  def test_a_published_message_reaches_a_connected_peer
+    port_a = free_port
+    port_b = free_port
+
+    bus_a = new_bus(port_a, [port_b])
+    bus_b = new_bus(port_b, [port_a])
 
     received = Queue.new
     listener = Object.new
@@ -24,8 +38,19 @@ class ZeroMQBusTest < Minitest::Test
     assert_equal({ seq: 1 }, payload)
   end
 
-  def test_local_subscribers_hear_messages_published_on_their_own_bus
+  def test_close_stops_the_listener_and_rejects_further_publishes
     bus = RubyZmqFramework::ZeroMQBus.new(free_port)
+    listener_thread = bus.instance_variable_get(:@listener)
+
+    bus.close
+
+    refute listener_thread.alive?, "listener thread must exit on close"
+    assert_raises(RubyZmqFramework::Error) { bus.publish(:ping, {}) }
+    bus.close # idempotent: a second close must not raise
+  end
+
+  def test_local_subscribers_hear_messages_published_on_their_own_bus
+    bus = new_bus(free_port)
 
     received = Queue.new
     listener = Object.new
@@ -64,6 +89,7 @@ class ZeroMQBusResilienceTest < Minitest::Test
   end
 
   def teardown
+    @bus.close
     @raw_pub.setsockopt(ZMQ::LINGER, 0)
     @raw_pub.close
     @raw_context.terminate
