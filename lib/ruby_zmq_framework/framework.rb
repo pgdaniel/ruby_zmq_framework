@@ -54,6 +54,14 @@ module RubyZmqFramework
       @bus.publish(topic, payload)
     end
 
+    # Identity used in heartbeats. Defaults to the class name, but set
+    # @node_name in initialize when running several instances of the same
+    # class — otherwise they overwrite each other in any StateRegistry's
+    # active_nodes. Also covers anonymous classes, whose .name is nil.
+    def node_name
+      @node_name || self.class.name || 'AnonymousNode'
+    end
+
     # Gracefully stops the heartbeat thread. Call this before closing the
     # bus the node broadcasts on. Wakes the thread out of its interval wait
     # rather than killing it, so an in-flight broadcast always completes.
@@ -80,12 +88,12 @@ module RubyZmqFramework
         loop do
           begin
             broadcast(:heartbeat, {
-              node_name: self.class.name,
+              node_name: node_name,
               status: "ok",
               timestamp: Time.now.to_i
             })
           rescue StandardError => e
-            warn "[Framework Error] Heartbeat failed for #{self.class.name}: #{e.message}"
+            warn "[Framework Error] Heartbeat failed for #{node_name}: #{e.message}"
           end
 
           keep_going = @heartbeat_mutex.synchronize do

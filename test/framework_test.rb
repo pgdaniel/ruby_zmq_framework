@@ -79,6 +79,21 @@ class FrameworkModuleTest < Minitest::Test
     assert_kind_of Integer, payload[:timestamp]
   end
 
+  def test_heartbeat_uses_a_custom_node_name_when_set
+    bus = FakeBus.new
+    node_class = Class.new(CompliantNode) do
+      def initialize(bus, name)
+        @node_name = name
+        super(bus)
+      end
+    end
+    node_class.new(bus, "ecu-2")
+
+    heartbeat = wait_for { bus.find(:heartbeat) }
+    refute_nil heartbeat
+    assert_equal "ecu-2", heartbeat[1][:node_name]
+  end
+
   def test_stop_heartbeat_terminates_the_heartbeat_thread
     bus = FakeBus.new
     node = CompliantNode.new(bus)
