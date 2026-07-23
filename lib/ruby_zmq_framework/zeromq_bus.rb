@@ -7,16 +7,28 @@ module RubyZmqFramework
     # How long the listener blocks in poll before looping, in milliseconds.
     POLL_TIMEOUT_MS = 100
 
-    def initialize(my_port, peer_ports = [])
+    # The port actually bound — differs from my_port when my_port is 0.
+    attr_reader :port
+
+    # my_port may be 0 to bind an OS-assigned ephemeral port (read it back
+    # via #port). peer_ports entries may be Integers (loopback ports),
+    # "host:port" strings, or full ZeroMQ endpoints ("tcp://10.0.0.5:5555").
+    # Pass bind_host: "0.0.0.0" to accept peers from other machines.
+    def initialize(my_port, peer_ports = [], bind_host: '127.0.0.1')
       @context = ZMQ::Context.new
 
       # Publisher Socket
       @pub = @context.socket(ZMQ::PUB)
-      check! @pub.bind("tcp://127.0.0.1:#{my_port}"), "bind to port #{my_port}"
+      bind_endpoint = "tcp://#{bind_host}:#{my_port.to_i.zero? ? '*' : my_port}"
+      check! @pub.bind(bind_endpoint), "bind to #{bind_endpoint}"
+      @port = bound_port
 
       # Subscriber Socket
       @sub = @context.socket(ZMQ::SUB)
-      peer_ports.each { |p| check! @sub.connect("tcp://127.0.0.1:#{p}"), "connect to port #{p}" }
+      peer_ports.each do |peer|
+        endpoint = peer_endpoint(peer)
+        check! @sub.connect(endpoint), "connect to #{endpoint}"
+      end
       check! @sub.setsockopt(ZMQ::SUBSCRIBE, ''), 'subscribe'
 
       # Keyed by topic *string*, with no default proc: the listener looks up
@@ -73,6 +85,21 @@ module RubyZmqFramework
       return if ZMQ::Util.resultcode_ok?(rc)
 
       raise Error, "[Framework Error] ZeroMQ #{action} failed: #{ZMQ::Util.error_string}"
+    end
+
+    def bound_port
+      endpoint = []
+      check! @pub.getsockopt(ZMQ::LAST_ENDPOINT, endpoint), 'read bound endpoint'
+      # ffi-rzmq returns the endpoint with a trailing NUL, e.g. "tcp://127.0.0.1:5555\0"
+      endpoint.first.delete("\0").rpartition(':').last.to_i
+    end
+
+    def peer_endpoint(peer)
+      case peer
+      when Integer then "tcp://127.0.0.1:#{peer}"
+      when %r{\A[a-z]+://} then peer # already a full ZeroMQ endpoint
+      else "tcp://#{peer}"           # "host:port"
+      end
     end
 
     def start_listener

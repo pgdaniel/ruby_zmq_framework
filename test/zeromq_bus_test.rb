@@ -38,6 +38,44 @@ class ZeroMQBusTest < Minitest::Test
     assert_equal({ seq: 1 }, payload)
   end
 
+  def test_binding_port_zero_picks_a_reachable_ephemeral_port
+    bus_a = new_bus(0)
+    assert_operator bus_a.port, :>, 0
+
+    bus_b = new_bus(free_port, [bus_a.port])
+    received = Queue.new
+    listener = Object.new
+    listener.define_singleton_method(:handle_message) do |topic, payload|
+      received << [topic, payload]
+    end
+    bus_b.subscribe(:ping, listener)
+
+    sleep 0.3 # slow-joiner
+    bus_a.publish(:ping, { seq: 6 })
+
+    _, payload = Timeout.timeout(3) { received.pop }
+    assert_equal({ seq: 6 }, payload)
+  end
+
+  def test_peers_can_be_given_as_host_port_strings
+    port_a = free_port
+    bus_a = new_bus(port_a)
+    bus_b = new_bus(free_port, ["127.0.0.1:#{port_a}"])
+
+    received = Queue.new
+    listener = Object.new
+    listener.define_singleton_method(:handle_message) do |topic, payload|
+      received << [topic, payload]
+    end
+    bus_b.subscribe(:ping, listener)
+
+    sleep 0.3 # slow-joiner
+    bus_a.publish(:ping, { seq: 7 })
+
+    _, payload = Timeout.timeout(3) { received.pop }
+    assert_equal({ seq: 7 }, payload)
+  end
+
   def test_close_stops_the_listener_and_rejects_further_publishes
     bus = RubyZmqFramework::ZeroMQBus.new(free_port)
     listener_thread = bus.instance_variable_get(:@listener)
