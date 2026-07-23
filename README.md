@@ -87,9 +87,10 @@ The bus is just two-frame ZeroMQ pub/sub — `[topic, json]` — and the whole
 contract fits on one page: [`PROTOCOL.md`](PROTOCOL.md), including a
 complete minimal Python node. Follow it, add a `cmd` entry to `flow.yml`,
 and the language never matters again. A Python companion library exists at
-[python_zmq_framework](https://github.com/pgdaniel/python_zmq_framework)
-(it predates the env-var contract; a node using it just reads the four
-variables and passes them in).
+[python_zmq_framework](https://github.com/pgdaniel/python_zmq_framework),
+with the same `boot()`-from-environment contract, `node_name`, and clean
+shutdown as this gem — a Python node under its `nodes/` and a Ruby node
+under this repo's `nodes/` are interchangeable entries in one `flow.yml`.
 
 ## What's in the box
 
