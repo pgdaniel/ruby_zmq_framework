@@ -49,6 +49,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - ZeroMQ return codes are checked; failures raise
   `RubyZmqFramework::Error` instead of passing silently.
 
+## [0.1.1] - 2026-07-24
+
+### Fixed
+- `bin/flowctl` is now actually packaged with the gem (registered as the
+  `flowctl` executable) instead of only existing in the git checkout —
+  previously a project that merely depended on the gem had no way to run
+  the Quick Start despite the README instructing `bundle exec bin/flowctl`.
+  `PROTOCOL.md` is shipped alongside it for the same reason.
+- `bin/flowctl` resolved its nodes' working directory from its own
+  install location (`__dir__`) rather than the manifest it was given, so
+  a `flow.yml` outside this repo would spawn nodes that couldn't find
+  their own relative `cmd` paths. It now `chdir`s to the manifest's
+  directory.
+
 ## [0.1.0] - 2026-07-21
 
 - Initial version: `ZeroMQBus`, `StrictContract`, `FrameworkModule`

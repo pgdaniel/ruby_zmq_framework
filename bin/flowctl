@@ -19,8 +19,9 @@ OptionParser.new do |opts|
 end.parse!
 
 manifest = ARGV.first || 'flow.yml'
-root = File.expand_path('..', __dir__)
-flow = RubyZmqFramework::Flow.load(File.expand_path(manifest, Dir.pwd))
+manifest_path = File.expand_path(manifest, Dir.pwd)
+root = File.dirname(manifest_path)
+flow = RubyZmqFramework::Flow.load(manifest_path)
 
 def free_port
   server = TCPServer.new('127.0.0.1', 0)

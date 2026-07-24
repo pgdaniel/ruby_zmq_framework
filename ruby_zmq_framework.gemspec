@@ -20,7 +20,10 @@ Gem::Specification.new do |spec|
 
   spec.required_ruby_version = ">= 2.7"
 
-  spec.files         = Dir["lib/**/*.rb"] + ["README.md", "CHANGELOG.md", "LICENSE.txt"]
+  spec.files         = Dir["lib/**/*.rb"] +
+                        ["bin/flowctl", "PROTOCOL.md", "README.md", "CHANGELOG.md", "LICENSE.txt"]
+  spec.bindir        = "bin"
+  spec.executables   = ["flowctl"]
   spec.require_paths = ["lib"]
 
   # json is deliberately not declared: it is a default gem shipped with
